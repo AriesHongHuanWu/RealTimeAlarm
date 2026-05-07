@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { auth, provider, db } from "./firebase";
-import { signInWithPopup, onAuthStateChanged, User, signOut } from "firebase/auth";
+import type { User } from "firebase/auth";
+import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, set, onValue, update, onDisconnect } from "firebase/database";
-import { Heart, BellRing, Link2, Settings as SettingsIcon, LogOut, Volume2, VolumeX, Moon, Palette, Globe, Save } from "lucide-react";
+import { Heart, BellRing, Link2, Settings as SettingsIcon, LogOut, Volume2, VolumeX, Palette, Globe, Save } from "lucide-react";
 import { useSettingsStore } from "./store";
 
 // UI Strings for i18n
