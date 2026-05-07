@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { auth, provider, db, requestForToken } from "./firebase";
 import type { User } from "firebase/auth";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
@@ -99,7 +99,7 @@ const themeStyles = {
 const RTC_CONFIG = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
 
 // Floating Heart Animation Component
-const FloatingHeart = ({ id, onComplete }: { id: string, onComplete: (id: string) => void }) => {
+const FloatingHeart: React.FC<{ id: string, onComplete: (id: string) => void }> = ({ id, onComplete }) => {
   const randomX = Math.random() * 200 - 100;
   return (
     <motion.div
