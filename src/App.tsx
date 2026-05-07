@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { auth, provider, db } from "./firebase";
+import { auth, provider, db, requestForToken } from "./firebase";
 import type { User } from "firebase/auth";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 import { ref, set, onValue, update, onDisconnect, remove, push, onChildAdded } from "firebase/database";
-import { Heart, BellRing, Link2, Settings as SettingsIcon, LogOut, Volume2, VolumeX, Palette, Globe, Save, Phone, PhoneOff, Mic, MicOff, Video, VideoOff } from "lucide-react";
+import { Heart, BellRing, Link2, Settings as SettingsIcon, LogOut, Volume2, VolumeX, Palette, Globe, Save, Phone, PhoneOff, Mic, MicOff, Video, VideoOff, History, Clock } from "lucide-react";
 import { useSettingsStore } from "./store";
 
 // UI Strings for i18n
@@ -34,7 +34,12 @@ const translations = {
     calling: '正在呼叫對方...',
     cancel: '取消',
     minCallTime: '需通話1分鐘',
-    mediaError: '需要相機與麥克風權限！'
+    mediaError: '需要相機與麥克風權限！',
+    history: '通話紀錄',
+    noHistory: '尚無紀錄',
+    missed: '未接來電',
+    completed: '已通話',
+    outgoing: '撥出通話'
   },
   'en': {
     title: 'Couples Connect',
@@ -62,7 +67,12 @@ const translations = {
     calling: 'Calling partner...',
     cancel: 'Cancel',
     minCallTime: '1 min limit',
-    mediaError: 'Camera and Mic permission required!'
+    mediaError: 'Camera and Mic permission required!',
+    history: 'Call History',
+    noHistory: 'No history yet',
+    missed: 'Missed Call',
+    completed: 'Completed',
+    outgoing: 'Outgoing Call'
   }
 };
 
@@ -84,6 +94,8 @@ export default function App() {
   
   const [partnerOnline, setPartnerOnline] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [callHistory, setCallHistory] = useState<any[]>([]);
 
   // WebRTC States
   const [callData, setCallData] = useState<any>(null);
@@ -113,19 +125,33 @@ export default function App() {
     audioRef.current = beep;
   }, []);
 
-  // Handle ringing sounds
+  // Handle ringing sounds and native notifications
   useEffect(() => {
-    if (isReceivingCall && soundEnabled) {
-      audioRef.current?.play().catch(() => {});
+    if (isReceivingCall) {
+      if (soundEnabled) {
+        audioRef.current?.play().catch(() => {});
+      }
+      if (Notification.permission === 'granted') {
+        const notif = new Notification(t.ringingTitle, {
+          body: '寶貝在找你囉！快接聽！',
+          icon: '/icons/pwa-192x192.png',
+          requireInteraction: true,
+          tag: 'incoming-call',
+        });
+        notif.onclick = () => {
+          window.focus();
+          notif.close();
+        };
+      }
     } else {
       audioRef.current?.pause();
       if (audioRef.current) audioRef.current.currentTime = 0;
     }
-  }, [isReceivingCall, soundEnabled]);
+  }, [isReceivingCall, soundEnabled, t.ringingTitle]);
 
-  // Initial Auth hook
+// Initial Auth hook
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         const myStatusRef = ref(db, `users/${currentUser.uid}/status`);
@@ -137,7 +163,17 @@ export default function App() {
           const data = snapshot.val();
           if (data?.partnerId) setPartnerId(data.partnerId);
           if (data?.theme && syncSettings) setTheme(data.theme);
+          if (data?.history) {
+            const histArray = Object.values(data.history).sort((a: any, b: any) => b.timestamp - a.timestamp);
+            setCallHistory(histArray);
+          }
         });
+
+        // Request FCM Token for Push Notifications
+        const token = await requestForToken();
+        if (token) {
+          update(ref(db, `users/${currentUser.uid}`), { fcmToken: token });
+        }
       }
     });
 
@@ -279,6 +315,9 @@ export default function App() {
         if (snap.val()) pc.addIceCandidate(new RTCIceCandidate(snap.val())).catch(() => {});
       });
 
+      // Log Outgoing Call
+      push(ref(db, `users/${user.uid}/history`), { type: 'outgoing', timestamp: Date.now() });
+
     } catch (e) {
       console.error(e);
       alert(t.mediaError);
@@ -320,6 +359,12 @@ export default function App() {
         if (snap.val()) pc.addIceCandidate(new RTCIceCandidate(snap.val())).catch(() => {});
       });
 
+      // Log Answered Call
+      push(ref(db, `users/${user.uid}/history`), { type: 'completed', timestamp: Date.now() });
+      if (partnerId) {
+        push(ref(db, `users/${partnerId}/history`), { type: 'completed', timestamp: Date.now() });
+      }
+
     } catch (e) {
       console.error(e);
       alert(t.mediaError);
@@ -330,6 +375,13 @@ export default function App() {
     if (isInCall && callDuration < 60) {
       alert(`接通後必須通話至少一分鐘！(Must call for at least 1 minute)`);
       return;
+    }
+    if (callData?.status === 'ringing' && !isInCall && user) {
+        // If hanging up while ringing, log as missed for the receiver
+        const receiver = callData.caller === user.uid ? partnerId : user.uid;
+        if (receiver) {
+           push(ref(db, `users/${receiver}/history`), { type: 'missed', timestamp: Date.now() });
+        }
     }
     if (roomId) await remove(ref(db, `calls/${roomId}`));
   };
@@ -404,9 +456,14 @@ export default function App() {
                 {t.yourCode} {user.uid}
               </div>
            </div>
-           <button onClick={() => setShowSettings(true)} className="p-3 bg-white/80 backdrop-blur rounded-full shadow hover:bg-white transition-colors">
-              <SettingsIcon className="text-gray-700" size={24} />
-           </button>
+           <div className="flex gap-3">
+              <button onClick={() => setShowHistory(true)} className="p-3 bg-white/80 backdrop-blur rounded-full shadow hover:bg-white transition-colors">
+                 <History className="text-gray-700" size={24} />
+              </button>
+              <button onClick={() => setShowSettings(true)} className="p-3 bg-white/80 backdrop-blur rounded-full shadow hover:bg-white transition-colors">
+                 <SettingsIcon className="text-gray-700" size={24} />
+              </button>
+           </div>
         </div>
       )}
 
@@ -541,6 +598,42 @@ export default function App() {
               <button onClick={() => setShowSettings(false)} className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 text-white shadow-md ${curTheme.btn} transition-all mt-4`}>
                  <Save size={20}/> {t.save}
               </button>
+           </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {showHistory && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in">
+           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between mb-6">
+                 <h3 className="text-2xl font-bold flex items-center gap-2"><History/> {t.history}</h3>
+                 <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 font-semibold p-2">
+                    {t.cancel}
+                 </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                {callHistory.length === 0 ? (
+                  <p className="text-center text-gray-500 mt-10">{t.noHistory}</p>
+                ) : (
+                  callHistory.map((item, index) => (
+                    <div key={index} className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100 shadow-sm">
+                       <div className={`p-3 rounded-full ${item.type === 'missed' ? 'bg-red-100 text-red-500' : item.type === 'outgoing' ? 'bg-blue-100 text-blue-500' : 'bg-green-100 text-green-500'}`}>
+                          <Phone size={20} />
+                       </div>
+                       <div className="flex-1">
+                          <p className={`font-bold ${item.type === 'missed' ? 'text-red-500' : 'text-gray-800'}`}>
+                             {t[item.type as keyof typeof t]}
+                          </p>
+                          <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                             <Clock size={12}/> {new Date(item.timestamp).toLocaleString()}
+                          </p>
+                       </div>
+                    </div>
+                  ))
+                )}
+              </div>
            </div>
         </div>
       )}
