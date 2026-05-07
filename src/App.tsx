@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { auth, provider, db, requestForToken } from "./firebase";
 import type { User } from "firebase/auth";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
-import { ref, set, onValue, update, onDisconnect, remove, push, onChildAdded, serverTimestamp } from "firebase/database";
+import { ref, set, onValue, update, onDisconnect, remove, push, onChildAdded } from "firebase/database";
 import { Heart, BellRing, Link2, Settings as SettingsIcon, LogOut, Volume2, VolumeX, Palette, Globe, Save, Phone, PhoneOff, Mic, MicOff, Video, VideoOff, History, Clock, MessageCircle, Send, X, Camera, HeartPulse, ScreenShare } from "lucide-react";
 import { useSettingsStore } from "./store";
 import { motion, AnimatePresence } from "framer-motion";
