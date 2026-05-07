@@ -105,7 +105,6 @@ export default function App() {
 
   // Helper flags
   const isReceivingCall = callData?.status === 'ringing' && callData.caller !== user?.uid;
-  const isCalling = callData?.status === 'ringing' && callData.caller === user?.uid;
   const isInCall = callData?.status === 'connected';
 
   useEffect(() => {
@@ -190,7 +189,7 @@ export default function App() {
 
   // Call Duration Timer
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     if (isInCall) {
       timer = setInterval(() => setCallDuration(prev => prev + 1), 1000);
     } else {
